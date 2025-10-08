@@ -1,3 +1,4 @@
+
 export type SignalResult = {
   id: string
   name: string
@@ -20,31 +21,54 @@ function signal(id: string, name: string, suspicious: boolean, weight: number, d
   return { id, name, suspicious, weight, details }
 }
 
-// --- Static Detections ---
-function detectWebdriver(): SignalResult {
-  const wd = (navigator as any)?.webdriver === true
-  return signal("webdriver", "navigator.webdriver is true", wd, 3, `value=${String((navigator as any)?.webdriver)}`)
+
+type MaybeNavigator = Navigator & {
+  webdriver?: boolean
+  deviceMemory?: number
+  maxTouchPoints?: number
+  languages?: string[]
+  plugins?: PluginArray | { length: number }
+  permissions?: unknown
 }
 
-function detectHeadlessUA(): SignalResult {
+type MaybeWindow = Window & {
+  chrome?: { app?: { isInstalled?: boolean } }
+}
+
+
+export function detectWebdriver(): SignalResult {
+  const wd = (navigator as MaybeNavigator).webdriver === true
+  return signal("webdriver", "navigator.webdriver is true", wd, 3, `value=${String((navigator as MaybeNavigator).webdriver)}`)
+}
+
+export function detectHeadlessUA(): SignalResult {
   const ua = UA().toLowerCase()
   const patterns = [
-    "headlesschrome","puppeteer","playwright","selenium","phantom",
-    "electron","bot","crawler","spider","slurp","percy"
+    "headlesschrome",
+    "puppeteer",
+    "playwright",
+    "selenium",
+    "phantom",
+    "electron",
+    "bot",
+    "crawler",
+    "spider",
+    "slurp",
+    "percy",
   ]
   const hit = patterns.some((p) => ua.includes(p))
   return signal("ua-headless", "User-Agent hints at automation", hit, 2, hit ? `UA=${ua}` : undefined)
 }
 
-function detectPluginsAnomaly(): SignalResult {
-  const len = navigator.plugins?.length ?? 0
+export function detectPluginsAnomaly(): SignalResult {
+  const len = (navigator as MaybeNavigator).plugins ? (navigator as MaybeNavigator).plugins!.length : 0
   const suspect = len === 0 && !isIOS()
   const weight = isIOS() ? 0.5 : 1.5
   return signal("plugins", "No browser plugins detected", suspect, weight, `plugins.length=${len}`)
 }
 
-function detectLanguagesAnomaly(): SignalResult {
-  const langs = (navigator.languages || []).filter(Boolean)
+export function detectLanguagesAnomaly(): SignalResult {
+  const langs = ((navigator as MaybeNavigator).languages || []).filter(Boolean)
   const suspect = langs.length === 0
   return signal("languages", "Empty navigator.languages", suspect, 1.5, `languages.length=${langs.length}`)
 }
@@ -54,17 +78,21 @@ function getWebGLInfo(): { vendor?: string; renderer?: string } {
     const canvas = document.createElement("canvas")
     const gl = (canvas.getContext("webgl") || canvas.getContext("experimental-webgl")) as WebGLRenderingContext | null
     if (!gl) return {}
-    const ext = gl.getExtension("WEBGL_debug_renderer_info") as any
-    if (ext) {
-      const vendor = gl.getParameter(ext.UNMASKED_VENDOR_WEBGL)
-      const renderer = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)
-      return { vendor, renderer }
-    }
+    const UNMASKED_VENDOR_WEBGL = 0x9245 // 37413? (common constant 0x9245)
+    const UNMASKED_RENDERER_WEBGL = 0x9246 // 37414? (common constant 0x9246)
+    const ext = gl.getExtension("WEBGL_debug_renderer_info")
+    if (!ext) return {}
+    const vendorRaw = gl.getParameter(UNMASKED_VENDOR_WEBGL as number)
+    const rendererRaw = gl.getParameter(UNMASKED_RENDERER_WEBGL as number)
+    const vendor = typeof vendorRaw === "string" ? vendorRaw : String(vendorRaw || "")
+    const renderer = typeof rendererRaw === "string" ? rendererRaw : String(rendererRaw || "")
+    return { vendor, renderer }
+  } catch {
     return {}
-  } catch { return {} }
+  }
 }
 
-function detectWebGLBlacklist(): SignalResult {
+export function detectWebGLBlacklist(): SignalResult {
   const { vendor = "", renderer = "" } = getWebGLInfo()
   const r = `${vendor} ${renderer}`.toLowerCase()
   const blacklist = ["swiftshader", "llvmpipe", "mesa", "software rasterizer", "virtualbox", "vmware", "parallels"]
@@ -72,55 +100,64 @@ function detectWebGLBlacklist(): SignalResult {
   return signal("webgl", "WebGL vendor/renderer looks virtualized", hit, 2.5, r.trim() ? `${vendor} | ${renderer}` : "n/a")
 }
 
-function detectTouchMismatch(): SignalResult {
-  const maxTouch = (navigator as any).maxTouchPoints ?? 0
+export function detectTouchMismatch(): SignalResult {
+  const maxTouch = (navigator as MaybeNavigator).maxTouchPoints ?? 0
   const suspect = isMobileUA() && maxTouch === 0
   const mild = !isMobileUA() && maxTouch >= 5
   const weight = suspect ? 2 : mild ? 1 : 0
   return signal("touch", "UA vs maxTouchPoints mismatch", suspect || mild, weight, `maxTouchPoints=${maxTouch}`)
 }
 
-function detectTimezoneAvailable(): SignalResult {
+export function detectTimezoneAvailable(): SignalResult {
   let tz: string | undefined
-  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone } catch { tz = undefined }
+  try {
+    tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+  } catch {
+    tz = undefined
+  }
   const suspect = !tz || typeof tz !== "string" || tz.length < 3
   return signal("timezone", "Timezone unavailable", suspect, 1, `timeZone=${tz || "n/a"}`)
 }
 
-function detectScreenResolution(): SignalResult {
+export function detectScreenResolution(): SignalResult {
   const w = window.screen.width
   const h = window.screen.height
   const suspect = w < 300 || h < 200 || w > 7680 || h > 4320
   return signal("screen", "Unlikely screen resolution", suspect, 1, `width=${w}, height=${h}`)
 }
 
-function detectDeviceSpecs(): SignalResult {
+export function detectDeviceSpecs(): SignalResult {
   const cores = navigator.hardwareConcurrency ?? 1
-  const memory = (navigator as any).deviceMemory ?? 1
+  const memory = (navigator as MaybeNavigator).deviceMemory ?? 1
   const suspect = cores <= 1 || memory <= 1
   return signal("device-specs", "Low device cores/memory", suspect, 1, `cores=${cores}, memory=${memory}GB`)
 }
 
-function detectChromeApp(): SignalResult {
-  const suspect = !!(window as any).chrome?.app?.isInstalled === false
-  return signal("chrome-app", "Chrome app detection", suspect, 1)
+export function detectChromeApp(): SignalResult {
+  const installed = (window as MaybeWindow).chrome?.app?.isInstalled
+  const suspect = installed === false
+  return signal("chrome-app", "Chrome app detection", suspect, 1, `isInstalled=${String(installed ?? "n/a")}`)
 }
 
-function detectPermissionsAPI(): SignalResult {
+export function detectPermissionsAPI(): SignalResult {
   const suspect = !("permissions" in navigator)
   return signal("permissions-api", "navigator.permissions missing", suspect, 1)
 }
 
-function detectWebRTC(): SignalResult {
-  const hasWebRTC = !!(window as any).RTCPeerConnection
+export function detectWebRTC(): SignalResult {
+  const hasWebRTC = "RTCPeerConnection" in window
   const suspect = !hasWebRTC
   return signal("webrtc", "WebRTC not available", suspect, 1)
 }
 
-// --- Activity Probe (Dynamic Signals) ---
+// --- Activity probe (dynamic) ---
+
 export async function startActivityProbe(ms = 5000): Promise<SignalResult[]> {
   const start = performance.now()
-  let moves = 0, clicks = 0, keys = 0, scrolls = 0
+  let moves = 0,
+    clicks = 0,
+    keys = 0,
+    scrolls = 0
   let lastT = 0
   const intervals: number[] = []
 
@@ -130,10 +167,22 @@ export async function startActivityProbe(ms = 5000): Promise<SignalResult[]> {
     lastT = t
   }
 
-  const onMove = () => { moves++; recordInterval() }
-  const onClick = () => { clicks++; recordInterval() }
-  const onKey = () => { keys++; recordInterval() }
-  const onScroll = () => { scrolls++; recordInterval() }
+  const onMove = () => {
+    moves++
+    recordInterval()
+  }
+  const onClick = () => {
+    clicks++
+    recordInterval()
+  }
+  const onKey = () => {
+    keys++
+    recordInterval()
+  }
+  const onScroll = () => {
+    scrolls++
+    recordInterval()
+  }
 
   window.addEventListener("pointermove", onMove)
   window.addEventListener("click", onClick)
@@ -157,31 +206,49 @@ export async function startActivityProbe(ms = 5000): Promise<SignalResult[]> {
   const veryRegular = intervals.length >= 5 && varianceAccumulator < 5
 
   return [
-    signal("probe-no-input", `No input during ${Math.round((performance.now() - start) / 1000)}s`, noInteraction, 3, `moves=${moves}, clicks=${clicks}, keys=${keys}, scrolls=${scrolls}`),
-    signal("probe-regularity", "Highly regular input timing", veryRegular, 1.5, intervals.length ? `n=${intervals.length}, variance≈${varianceAccumulator.toFixed(2)}` : "n=0"),
+    signal(
+      "probe-no-input",
+      `No input during ${Math.round((performance.now() - start) / 1000)}s`,
+      noInteraction,
+      3,
+      `moves=${moves}, clicks=${clicks}, keys=${keys}, scrolls=${scrolls}`
+    ),
+    signal(
+      "probe-regularity",
+      "Highly regular input timing",
+      veryRegular,
+      1.5,
+      intervals.length ? `n=${intervals.length}, variance≈${varianceAccumulator.toFixed(2)}` : "n=0"
+    ),
   ]
 }
 
-// --- Behavioral Signals ---
-function detectFocusBlurPatterns(): SignalResult {
+
+export function detectFocusBlurPatterns(): SignalResult {
   let lostFocus = false
-  window.addEventListener("blur", () => { lostFocus = true })
+  window.addEventListener("blur", () => {
+    lostFocus = true
+  })
   return signal("focus-blur", "Did the user lose focus?", lostFocus, 0.5)
 }
 
-function detectResizeEvents(): SignalResult {
+export function detectResizeEvents(): SignalResult {
   let resized = false
-  window.addEventListener("resize", () => { resized = true })
+  window.addEventListener("resize", () => {
+    resized = true
+  })
   return signal("resize", "User resized window?", resized, 0.5)
 }
 
-function detectTouchGestures(): SignalResult {
+export function detectTouchGestures(): SignalResult {
   let pinchZoom = false
-  window.addEventListener("gesturestart", () => { pinchZoom = true })
+  window.addEventListener("gesturestart", () => {
+    pinchZoom = true
+  })
   return signal("touch-gestures", "User performed touch gestures?", pinchZoom, 1)
 }
 
-// --- Helper Functions ---
+
 export function summarize(results: SignalResult[]): Summary {
   const score = results.reduce((acc, s) => acc + (s.suspicious ? s.weight : 0), 0)
   const max = results.reduce((acc, s) => acc + s.weight, 0)
@@ -208,7 +275,7 @@ export function runStaticDetections(): SignalResult[] {
   ]
 }
 
-export async function runAllDetections(ms = 5000): Promise<{ results: SignalResult[], summary: Summary }> {
+export async function runAllDetections(ms = 5000): Promise<{ results: SignalResult[]; summary: Summary }> {
   const staticResults = runStaticDetections()
   const dynamicResults = await startActivityProbe(ms)
   const behavioralResults = [detectFocusBlurPatterns(), detectResizeEvents(), detectTouchGestures()]
