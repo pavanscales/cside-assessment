@@ -1,103 +1,198 @@
-import Image from "next/image";
+"use client"
 
-export default function Home() {
+import { useEffect, useMemo, useState } from "react"
+import { cn } from "../app/lib/utils"
+import {
+  runStaticDetections,
+  startActivityProbe,
+  summarize,
+  type SignalResult,
+  type Summary,
+} from "../app/lib/botDetector"
+function StatusBadge({ summary }: { summary: Summary | null }) {
+  const label = !summary
+    ? "Awaiting"
+    : summary.level === "low"
+      ? "Human"
+      : summary.level === "medium"
+        ? "Suspicious"
+        : "Automated"
+
+  const tone = !summary
+    ? "bg-gray-700 text-gray-300"
+    : summary.level === "low"
+      ? "bg-gray-800 text-gray-50"
+      : summary.level === "medium"
+        ? "bg-yellow-800 text-yellow-200"
+        : "bg-red-900 text-red-200"
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <span
+      className={cn(
+        "inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-full shadow-sm ring-1 ring-gray-600/30 transition-colors duration-200 ease-in-out",
+        tone
+      )}
+      aria-live="polite"
+    >
+      {label}
+    </span>
+  )
+}
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+
+function Dot({ ok }: { ok: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cn("inline-block size-2 rounded-full mr-2 align-middle", ok ? "bg-emerald-400" : "bg-red-500")}
+    />
+  )
+}
+
+function CheckItem({ s }: { s: SignalResult }) {
+  return (
+    <div className="flex items-start justify-between rounded-md border border-border/60 bg-secondary/40 p-3">
+      <div className="flex items-start gap-2">
+        <Dot ok={!s.suspicious} />
+        <div>
+          <div className="font-medium text-pretty">{s.name}</div>
+          {s.details && <div className="text-sm text-muted-foreground text-pretty">{s.details}</div>}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </div>
+      <div className="text-xs text-muted-foreground tabular-nums">weight {s.weight}</div>
     </div>
-  );
+  )
+}
+
+function useBehavioralSignals() {
+  const [lostFocus, setLostFocus] = useState(false)
+  const [resized, setResized] = useState(false)
+  const [pinchZoom, setPinchZoom] = useState(false)
+
+  useEffect(() => {
+    const onBlur = () => setLostFocus(true)
+    const onResize = () => setResized(true)
+    const onGesture = () => setPinchZoom(true)
+
+    window.addEventListener("blur", onBlur)
+    window.addEventListener("resize", onResize)
+    window.addEventListener("gesturestart", onGesture)
+
+    return () => {
+      window.removeEventListener("blur", onBlur)
+      window.removeEventListener("resize", onResize)
+      window.removeEventListener("gesturestart", onGesture)
+    }
+  }, [])
+
+  return useMemo(
+    () => [
+      { id: "behavioral-focus-blur", name: "Did the user lose focus?", suspicious: lostFocus, weight: 0.5 },
+      { id: "behavioral-resize", name: "User resized window?", suspicious: resized, weight: 0.5 },
+      { id: "behavioral-touch-gestures", name: "User performed touch gestures?", suspicious: pinchZoom, weight: 1 },
+    ],
+    [lostFocus, resized, pinchZoom]
+  )
+}
+
+export default function Page() {
+  const behavioralSignals = useBehavioralSignals()
+
+  const [staticSignals, setStaticSignals] = useState<SignalResult[]>([])
+  const [probeSignals, setProbeSignals] = useState<SignalResult[]>([])
+  const [summary, setSummary] = useState<Summary | null>(null)
+  const [probing, setProbing] = useState(false)
+
+  useEffect(() => {
+    const staticResults = runStaticDetections()
+    setStaticSignals(staticResults)
+  }, [])
+
+  const allSignals = useMemo(() => {
+    return [...staticSignals, ...behavioralSignals, ...probeSignals]
+  }, [staticSignals, behavioralSignals, probeSignals])
+
+  useEffect(() => {
+    setSummary(summarize(allSignals))
+  }, [allSignals])
+
+  const json = useMemo(() => JSON.stringify({ summary, signals: allSignals }, null, 2), [summary, allSignals])
+
+  async function handleProbe() {
+    setProbing(true)
+    try {
+      const probeResults = await startActivityProbe(5000)
+      const ts = Date.now()
+      const uniqueProbes = probeResults.map((s, i) => ({
+        ...s,
+        id: `${s.id}-probe-${i}-${ts}`, 
+      }))
+      setProbeSignals(uniqueProbes) 
+    } finally {
+      setProbing(false)
+    }
+  }
+
+  return (
+    <main className="min-h-dvh px-6 py-10 md:py-14">
+      <div className="mx-auto max-w-3xl space-y-8">
+        <header className="flex items-center justify-between">
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-[0.25em] text-muted-foreground">Client-Side Demo</p>
+            <h1 className="text-balance text-3xl md:text-4xl font-semibold">Automation vs Human Detection</h1>
+          </div>
+          <StatusBadge summary={summary} />
+        </header>
+
+        <section className="rounded-xl border border-border/60 bg-card/30 p-5 md:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm text-muted-foreground">
+              Risk score: <span className="font-mono">{summary?.score ?? 0}</span> / <span className="font-mono">{summary?.max ?? 0}</span>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleProbe}
+                disabled={probing}
+                className={cn(
+                  "rounded-md px-3 py-2 text-sm ring-1 transition-colors",
+                  probing
+                    ? "bg-muted text-muted-foreground ring-muted-foreground/20 cursor-not-allowed"
+                    : "bg-primary text-primary-foreground ring-primary/30 hover:bg-primary/90"
+                )}
+              >
+                {probing ? "Probing… (5s)" : "Run 5s activity check"}
+              </button>
+
+              <button
+                onClick={() => navigator.clipboard?.writeText(json)}
+                className="rounded-md px-3 py-2 text-sm ring-1 bg-secondary hover:bg-secondary/80 transition-colors"
+              >
+                Copy JSON
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3">
+            {allSignals.map((s) => (
+              <CheckItem key={s.id} s={s} />
+            ))}
+          </div>
+
+          <details className="mt-6 rounded-md border border-border/60 bg-secondary/30 p-4">
+            <summary className="cursor-pointer text-sm font-medium">How this works</summary>
+            <div className="mt-3 text-sm text-muted-foreground space-y-2">
+              <p>This page runs only in your browser. It inspects multiple signals (no third‑party services) and scores suspicion. The activity probe waits 5s for natural mouse/keyboard variation.</p>
+              <p>Final status is a heuristic, not a verdict. Automated tools can spoof or bypass many checks, and some real users may be flagged depending on device, privacy settings, or environment.</p>
+            </div>
+          </details>
+        </section>
+
+        <section className="rounded-xl border border-border/60 bg-card/30 p-5 md:p-6">
+          <h2 className="text-lg font-semibold mb-3">Diagnostics JSON</h2>
+          <pre className="overflow-auto rounded-lg bg-secondary/30 p-4 text-xs leading-relaxed">{json}</pre>
+        </section>
+      </div>
+    </main>
+  )
 }
