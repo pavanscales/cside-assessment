@@ -7,9 +7,7 @@ import "./globals.css"
 import { Suspense } from "react"
 
 export const metadata: Metadata = {
-  title: "cside-assessment",
-
-
+  title: "cside-isgoated",
 }
 
 export default function RootLayout({

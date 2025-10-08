@@ -21,7 +21,6 @@ function signal(id: string, name: string, suspicious: boolean, weight: number, d
   return { id, name, suspicious, weight, details }
 }
 
-
 type MaybeNavigator = Navigator & {
   webdriver?: boolean
   deviceMemory?: number
@@ -150,7 +149,6 @@ export function detectWebRTC(): SignalResult {
   return signal("webrtc", "WebRTC not available", suspect, 1)
 }
 
-// --- Activity probe (dynamic) ---
 
 export async function startActivityProbe(ms = 5000): Promise<SignalResult[]> {
   const start = performance.now()
