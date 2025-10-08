@@ -16,7 +16,13 @@ const UA = () => (typeof navigator !== "undefined" ? navigator.userAgent : "")
 const isIOS = () => /iP(hone|ad|od)/i.test(UA())
 const isMobileUA = () => /(Android|iPhone|iPad|Mobile)/i.test(UA())
 
-function signal(id: string, name: string, suspicious: boolean, weight: number, details?: string): SignalResult {
+function signal(
+  id: string,
+  name: string,
+  suspicious: boolean,
+  weight: number,
+  details?: string
+): SignalResult {
   return { id, name, suspicious, weight, details }
 }
 
@@ -95,9 +101,7 @@ function getWebGLInfo(): { vendor?: string, renderer?: string, extCount?: number
     const vendor = ext ? gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) : ""
     const renderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : ""
     return { vendor, renderer, extCount: gl.getSupportedExtensions()?.length ?? 0 }
-  } catch {
-    return {}
-  }
+  } catch { return {} }
 }
 
 export function detectWebGLBlacklist(): SignalResult {
@@ -169,7 +173,7 @@ export function detectCanvasFingerprint(): SignalResult {
     ctx.font = "14px 'Arial'"
     ctx.fillText("bot-check", 2, 2)
     const data = canvas.toDataURL()
-    const hash = Array.from(data).reduce((a,c) => (a + c.charCodeAt(0)) % 9973, 0)
+    const hash = Array.from(data).reduce((a,c)=> (a + c.charCodeAt(0)) % 9973, 0)
     return signal("canvas-fp", "Canvas fingerprint entropy", hash<1000 || hash>9000, 1.5, `hash=${hash}`)
   } catch { return signal("canvas-fp", "Canvas failed", true, 2) }
 }
@@ -202,13 +206,13 @@ export function detectAudioContext(): SignalResult {
   } catch { return signal("audio", "AudioContext error", true, 0.5) }
 }
 
+
 export async function startActivityProbe(ms = 5000): Promise<SignalResult[]> {
-  const start = performance.now()
   let moves=0, clicks=0, keys=0, scrolls=0, lastPos={x:-1,y:-1}, tinyMoves=0
-  const intervals:number[] = []; let lastT=0
+  const intervals:number[]=[]; let lastT=0
 
   const record = (pos?:{x:number,y:number})=>{
-    const t=performance.now()
+    const t = performance.now()
     if(lastT) intervals.push(t-lastT)
     lastT=t
     if(pos && lastPos.x>=0){
@@ -224,63 +228,67 @@ export async function startActivityProbe(ms = 5000): Promise<SignalResult[]> {
   const onKey=()=>{keys++; record()}
   const onScroll=()=>{scrolls++; record()}
 
-  window.addEventListener("pointermove",onMove)
-  window.addEventListener("click",onClick)
-  window.addEventListener("keydown",onKey)
-  window.addEventListener("scroll",onScroll)
+  window.addEventListener("pointermove", onMove)
+  window.addEventListener("click", onClick)
+  window.addEventListener("keydown", onKey)
+  window.addEventListener("scroll", onScroll)
 
-  await new Promise(r=>setTimeout(r,ms))
+  await new Promise(r=>setTimeout(r, ms))
 
-  window.removeEventListener("pointermove",onMove)
-  window.removeEventListener("click",onClick)
-  window.removeEventListener("keydown",onKey)
-  window.removeEventListener("scroll",onScroll)
+  window.removeEventListener("pointermove", onMove)
+  window.removeEventListener("click", onClick)
+  window.removeEventListener("keydown", onKey)
+  window.removeEventListener("scroll", onScroll)
 
-  const mean=intervals.length>0?intervals.reduce((a,b)=>a+b,0)/intervals.length:0
-  const variance=intervals.length>1?intervals.reduce((acc,v)=>acc+(v-mean)**2,0)/(intervals.length-1):0
-  const sum=intervals.reduce((a,b)=>a+b,0)
-  const probs=intervals.map(i=>i/(sum||1))
-  const entropy=-probs.reduce((a,p)=>a+(p*Math.log2(p||1)),0)
-  const noInput=moves+clicks+keys+scrolls===0
-  const tooRegular=variance<5 && entropy<2
-  const impossibleSpeed=intervals.some(i=>i<8)
-  const excessiveTinyMoves=tinyMoves>Math.max(10,Math.floor(moves*0.5))
+  const mean = intervals.length>0 ? intervals.reduce((a,b)=>a+b,0)/intervals.length : 0
+  const variance = intervals.length>1 ? intervals.reduce((acc,v)=>acc+(v-mean)**2,0)/(intervals.length-1) : 0
+  const sum = intervals.reduce((a,b)=>a+b,0)
+  const probs = intervals.map(i=>i/(sum||1))
+  const entropy = -probs.reduce((a,p)=>a+(p*Math.log2(p||1)),0)
+  const noInput = moves+clicks+keys+scrolls === 0
+  const tooRegular = variance<5 && entropy<2
+  const impossibleSpeed = intervals.some(i=>i<8)
+  const excessiveTinyMoves = tinyMoves>Math.max(10,Math.floor(moves*0.5))
 
   return [
-    signal("probe-no-input",`No input during ${Math.round((performance.now()-start)/1000)}s`,noInput,3,`moves=${moves}, clicks=${clicks}, keys=${keys}, scrolls=${scrolls}`),
-    signal("probe-regularity","Low entropy in input timing",tooRegular,1.5,`n=${intervals.length}, var=${variance.toFixed(1)}, H=${entropy.toFixed(2)}`),
-    signal("probe-impossible-speed","Impossible input speed detected",impossibleSpeed,2,`minInterval=${Math.min(...(intervals.length?intervals:[Infinity]))}`),
-    signal("probe-jitter","Too many tiny pointer movements",excessiveTinyMoves,1.5,`tinyMoves=${tinyMoves}, moves=${moves}`)
+    signal("probe-no-input", `No input during ${Math.round(ms/1000)}s`, noInput, 3, `moves=${moves}, clicks=${clicks}, keys=${keys}, scrolls=${scrolls}`),
+    signal("probe-regularity", "Low entropy in input timing", tooRegular, 1.5, `n=${intervals.length}, var=${variance.toFixed(1)}, H=${entropy.toFixed(2)}`),
+    signal("probe-impossible-speed", "Impossible input speed detected", impossibleSpeed, 2, `minInterval=${Math.min(...(intervals.length?intervals:[Infinity]))}`),
+    signal("probe-jitter", "Too many tiny pointer movements", excessiveTinyMoves, 1.5, `tinyMoves=${tinyMoves}, moves=${moves}`)
   ]
 }
 
-export async function detectFocusBlurPatterns(ms=3000):Promise<SignalResult>{
-  let lostFocus=false; window.addEventListener("blur",()=>lostFocus=true)
-  await new Promise(r=>setTimeout(r,ms))
+export async function detectFocusBlurPatterns(ms=3000): Promise<SignalResult> {
+  let lostFocus=false
+  window.addEventListener("blur",()=>lostFocus=true)
+  await new Promise(r=>setTimeout(r, ms))
   return signal("focus-blur","Did user lose focus?",lostFocus,0.5)
 }
 
-export async function detectResizeEvents(ms=3000):Promise<SignalResult>{
-  let resized=false; window.addEventListener("resize",()=>resized=true)
-  await new Promise(r=>setTimeout(r,ms))
+export async function detectResizeEvents(ms=3000): Promise<SignalResult> {
+  let resized=false
+  window.addEventListener("resize",()=>resized=true)
+  await new Promise(r=>setTimeout(r, ms))
   return signal("resize","Did user resize window?",resized,0.5)
 }
 
-export async function detectTouchGestures(ms=3000):Promise<SignalResult>{
-  let pinch=false; window.addEventListener("gesturestart",()=>pinch=true)
-  await new Promise(r=>setTimeout(r,ms))
+export async function detectTouchGestures(ms=3000): Promise<SignalResult> {
+  let pinch=false
+  window.addEventListener("gesturestart",()=>pinch=true)
+  await new Promise(r=>setTimeout(r, ms))
   return signal("touch-gestures","User performed touch gestures?",pinch,1)
 }
 
-export function summarize(results:SignalResult[]):Summary{
-  const score=results.reduce((a,s)=>a+(s.suspicious?s.weight:0),0)
-  const max=results.reduce((a,s)=>a+s.weight,0)
-  const ratio=max>0?score/max:0
-  const level=ratio>=0.7?"high":ratio>=0.4?"medium":"low"
-  return {score:+score.toFixed(1), max:+max.toFixed(1), level}
+
+export function summarize(results: SignalResult[]): Summary {
+  const score = results.reduce((a,s)=>a+(s.suspicious?s.weight:0),0)
+  const max = results.reduce((a,s)=>a+s.weight,0)
+  const ratio = max>0 ? score/max : 0
+  const level = ratio>=0.7 ? "high" : ratio>=0.4 ? "medium" : "low"
+  return { score:+score.toFixed(1), max:+max.toFixed(1), level }
 }
 
-export function runStaticDetections():SignalResult[]{
+export function runStaticDetections(): SignalResult[] {
   return [
     detectWebdriver(), detectHeadlessUA(), detectAutomationGlobals(), detectFunctionTampering(),
     detectPluginsAnomaly(), detectLanguagesAnomaly(), detectWebGLBlacklist(), detectTouchMismatch(),
@@ -290,14 +298,14 @@ export function runStaticDetections():SignalResult[]{
   ]
 }
 
-export async function runAllDetections(ms=5000):Promise<{results:SignalResult[], summary:Summary}>{
-  const staticResults=runStaticDetections()
-  const dynamicResults=await startActivityProbe(ms)
-  const behavioralResults=await Promise.all([
+export async function runAllDetections(ms=5000): Promise<{results:SignalResult[], summary:Summary}> {
+  const staticResults = runStaticDetections()
+  const dynamicResults = await startActivityProbe(ms)
+  const behavioralResults = await Promise.all([
     detectFocusBlurPatterns(ms), detectResizeEvents(ms), detectTouchGestures(ms)
   ])
-  const all=[...staticResults,...dynamicResults,...behavioralResults]
-  const summary=summarize(all)
-  try{ (window as any).__BOT_DETECTION_OUTPUT__={summary,results:all,ts:Date.now()} } catch{}
-  return {results:all,summary}
+  const all = [...staticResults, ...dynamicResults, ...behavioralResults]
+  const summary = summarize(all)
+  try { (window as any).__BOT_DETECTION_OUTPUT__ = { summary, results: all, ts: Date.now() } } catch {}
+  return { results: all, summary }
 }
