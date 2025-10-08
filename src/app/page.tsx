@@ -9,6 +9,7 @@ import {
   type SignalResult,
   type Summary,
 } from "../app/lib/botDetector"
+
 function StatusBadge({ summary }: { summary: Summary | null }) {
   const label = !summary
     ? "Awaiting"
@@ -38,7 +39,6 @@ function StatusBadge({ summary }: { summary: Summary | null }) {
     </span>
   )
 }
-
 
 function Dot({ ok }: { ok: boolean }) {
   return (
@@ -102,15 +102,18 @@ export default function Page() {
   const [probeSignals, setProbeSignals] = useState<SignalResult[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
   const [probing, setProbing] = useState(false)
+  const [copyStatus, setCopyStatus] = useState("")
 
   useEffect(() => {
     const staticResults = runStaticDetections()
     setStaticSignals(staticResults)
   }, [])
 
-  const allSignals = useMemo(() => {
-    return [...staticSignals, ...behavioralSignals, ...probeSignals]
-  }, [staticSignals, behavioralSignals, probeSignals])
+  const allSignals = useMemo(() => [...staticSignals, ...behavioralSignals, ...probeSignals], [
+    staticSignals,
+    behavioralSignals,
+    probeSignals,
+  ])
 
   useEffect(() => {
     setSummary(summarize(allSignals))
@@ -125,11 +128,22 @@ export default function Page() {
       const ts = Date.now()
       const uniqueProbes = probeResults.map((s, i) => ({
         ...s,
-        id: `${s.id}-probe-${i}-${ts}`, 
+        id: `${s.id}-probe-${i}-${ts}`,
       }))
-      setProbeSignals(uniqueProbes) 
+      setProbeSignals(uniqueProbes)
     } finally {
       setProbing(false)
+    }
+  }
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(json)
+      setCopyStatus("Copied!")
+      setTimeout(() => setCopyStatus(""), 2000)
+    } catch {
+      setCopyStatus("Failed to copy")
+      setTimeout(() => setCopyStatus(""), 2000)
     }
   }
 
@@ -147,7 +161,8 @@ export default function Page() {
         <section className="rounded-xl border border-border/60 bg-card/30 p-5 md:p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm text-muted-foreground">
-              Risk score: <span className="font-mono">{summary?.score ?? 0}</span> / <span className="font-mono">{summary?.max ?? 0}</span>
+              Risk score: <span className="font-mono">{summary?.score ?? 0}</span> /{" "}
+              <span className="font-mono">{summary?.max ?? 0}</span>
             </div>
 
             <div className="flex gap-2">
@@ -165,10 +180,13 @@ export default function Page() {
               </button>
 
               <button
-                onClick={() => navigator.clipboard?.writeText(json)}
-                className="rounded-md px-3 py-2 text-sm ring-1 bg-secondary hover:bg-secondary/80 transition-colors"
+                onClick={handleCopy}
+                className="relative rounded-md px-3 py-2 text-sm ring-1 bg-secondary hover:bg-secondary/80 transition-colors"
               >
                 Copy JSON
+                {copyStatus && (
+                  <span className="absolute -top-6 right-0 text-xs text-emerald-400">{copyStatus}</span>
+                )}
               </button>
             </div>
           </div>
@@ -182,8 +200,14 @@ export default function Page() {
           <details className="mt-6 rounded-md border border-border/60 bg-secondary/30 p-4">
             <summary className="cursor-pointer text-sm font-medium">How this works</summary>
             <div className="mt-3 text-sm text-muted-foreground space-y-2">
-              <p>This page runs only in your browser. It inspects multiple signals (no third‑party services) and scores suspicion. The activity probe waits 5s for natural mouse/keyboard variation.</p>
-              <p>Final status is a heuristic, not a verdict. Automated tools can spoof or bypass many checks, and some real users may be flagged depending on device, privacy settings, or environment.</p>
+              <p>
+                This page runs only in your browser. It inspects multiple signals (no third‑party services) and
+                scores suspicion. The activity probe waits 5s for natural mouse/keyboard variation.
+              </p>
+              <p>
+                Final status is a heuristic, not a verdict. Automated tools can spoof or bypass many checks, and
+                some real users may be flagged depending on device, privacy settings, or environment.
+              </p>
             </div>
           </details>
         </section>
