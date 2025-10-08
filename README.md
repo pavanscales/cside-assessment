@@ -1,37 +1,76 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Client-Side Human vs Bot Detection
+Overview : 
 
-## Getting Started
+This repository contains a client-side script that detects whether the current browser session is likely automated or human-driven.
+It runs entirely in the browser and does not use any third-party bot detection services :)
 
-First, run the development server:
+Demo :
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+A live demo page is available here: https://cside-assesment.vercel.app/
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Detections Implemented :
+Static Detections
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+navigator.webdriver check
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+User-Agent inspection for headless or automation hints
 
-## Learn More
+Browser plugin anomalies
 
-To learn more about Next.js, take a look at the following resources:
+Language settings anomalies
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+WebGL vendor/renderer blacklist
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Touch support vs User-Agent mismatch
 
-## Deploy on Vercel
+Timezone availability
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Screen resolution sanity check
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-# cside-assessment
+Device specs (CPU cores, memory)
+
+Chrome app detection
+
+Permissions API presence
+
+WebRTC availability
+
+Behavioral Signals
+
+Focus/blur patterns
+
+Window resize events
+
+Touch gestures
+
+Activity Probe
+
+Monitors mouse movements, clicks, keyboard inputs, and scroll events for 5 seconds
+
+Analyzes timing variance to detect overly regular behavior
+
+Summary and Risk Levels
+
+Signals are aggregated into a risk score and mapped to status levels:
+
+Human – Low suspicion
+
+Suspicious – Medium suspicion
+
+Automated – High suspicion
+
+Expected False Positives
+
+Users with restricted browsers or strict privacy settings
+
+Users with unusual interaction patterns (very slow or very fast inputs)
+
+Mobile or touch devices with unconventional configurations
+
+Repository Contents
+
+app/page.tsx – Demo page with UI and status badge
+
+app/lib/botDetector.ts – Detection script implementing all signals
+
+README.md – This file
